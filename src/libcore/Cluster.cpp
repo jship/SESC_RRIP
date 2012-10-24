@@ -31,6 +31,8 @@ Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
 #include "estl.h"
 
+#include <limits.h>
+
 // Begin: Fields used during constructions
 
 struct UnitEntry {

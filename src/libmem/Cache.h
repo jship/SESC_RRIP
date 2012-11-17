@@ -82,6 +82,7 @@ public:
     return valid;
   }
   void validate() {
+    StateGeneric<>::validate();
     I(getTag());
     valid = true;
     locked = false;
@@ -89,6 +90,7 @@ public:
     nReadAccesses = 0;
   }
   void invalidate() {
+    StateGeneric<>::invalidate();
     valid = false;
     dirty = false;
     locked = false;

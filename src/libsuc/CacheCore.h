@@ -31,7 +31,81 @@ Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #include "Snippets.h"
 #include "GStats.h"
 
-enum    ReplacementPolicy  {LRU, RANDOM};
+enum    ReplacementPolicy  {LRU, RANDOM, SRRIP};
+
+template <typename rrpv_t, unsigned rrpv_bit_count>
+class RRPVInfo
+{
+public:
+    RRPVInfo()
+    {
+        maximizeRrpv();
+    }
+
+    rrpv_t getRrpv() const { return mRrpv; }
+        
+    void promoteRrpv() { mRrpv = (mRrpv < maxRrpvValue) ? mRrpv + 1 : mRrpv; }
+    void demoteRrpv() { mRrpv = (mRrpv > 0) ? mRrpv - 1 : mRrpv; }
+    
+    void minimizeRrpv() { mRrpv = 0; }
+    void maximizeRrpv() { mRrpv = maxRrpvValue; }
+    
+    void validate() { maximizeRrpv(); }
+    void invalidate() { maximizeRrpv(); }
+        
+    static const rrpv_t rrpvBitCount = rrpv_bit_count;
+    static const rrpv_t maxRrpvValue = (1 << rrpv_bit_count) - 1;
+    
+private:
+    rrpv_t mRrpv;
+};
+
+// Change the number to change the RRPV bit count.
+typedef RRPVInfo<uint32_t, 2> RRPVInfoType;
+
+template<class Addr_t=uint32_t>
+class StateGeneric {
+private:
+  Addr_t tag;
+  RRPVInfoType mRrpvInfo;
+
+public:
+  virtual ~StateGeneric() {
+    tag = 0;
+  }
+ 
+ Addr_t getTag() const { return tag; }
+ void setTag(Addr_t a) {
+   I(a);
+   tag = a; 
+ }
+ void clearTag() { tag = 0; }
+ void initialize(void *c) { 
+   clearTag(); 
+ }
+
+ virtual bool isValid() const { return tag; }
+
+ virtual void validate()
+ {
+     mRrpvInfo.maximizeRrpv();
+ }
+ 
+ virtual void invalidate()
+ {
+     clearTag();
+     mRrpvInfo.maximizeRrpv();
+ }
+
+ virtual bool isLocked() const {
+   return false;
+ }
+
+ virtual void dump(const char *str) {
+ }
+ 
+ RRPVInfoType& getRrpvRef() { return mRrpvInfo; }
+};
 
 #ifdef SESC_ENERGY
 template<class State, class Addr_t = uint32_t, bool Energy=true>
@@ -240,9 +314,54 @@ class CacheAssoc : public CacheGeneric<State, Addr_t, Energy> {
   using CacheGeneric<State, Addr_t, Energy>::maskAssoc;
   using CacheGeneric<State, Addr_t, Energy>::goodInterface;
 
-private:
 public:
   typedef typename CacheGeneric<State, Addr_t, Energy>::CacheLine Line;
+  
+private:
+  void onLineHit(Line* line)
+  {
+      if (policy == SRRIP)
+      {
+          line->getRrpvRef().promoteRrpv();
+      }
+  }
+  
+  Line** onLineMiss(Line** setBegin, Line** setEnd)
+  {
+      if (policy == SRRIP)
+      {
+          Line** it;
+          bool replacementFound = false;
+          
+          while (!replacementFound)
+          {
+            for (it = setBegin; it < setEnd; it++)
+            {
+                RRPVInfoType& rrpvRef = (*it)->getRrpvRef();
+                if (rrpvRef.getRrpv() == rrpvRef.maxRrpvValue)
+                {
+                    break;
+                }
+            }
+          
+            if (it < setEnd)
+            {
+                replacementFound = true;
+            }
+            else
+            {
+                for (it = setBegin; it < setEnd; it++)
+                {
+                    (*it)->getRrpvRef().demoteRrpv();
+                }
+            }
+          }
+          
+          return it;
+      }
+      
+      return 0;
+  }
 
 protected:
  
@@ -345,39 +464,6 @@ public:
   }
 
   Line *findLine2Replace(Addr_t addr, bool ignoreLocked=false);
-};
-
-
-template<class Addr_t=uint32_t>
-class StateGeneric {
-private:
-  Addr_t tag;
-
-public:
-  virtual ~StateGeneric() {
-    tag = 0;
-  }
- 
- Addr_t getTag() const { return tag; }
- void setTag(Addr_t a) {
-   I(a);
-   tag = a; 
- }
- void clearTag() { tag = 0; }
- void initialize(void *c) { 
-   clearTag(); 
- }
-
- virtual bool isValid() const { return tag; }
-
- virtual void invalidate() { clearTag(); }
-
- virtual bool isLocked() const {
-   return false;
- }
-
- virtual void dump(const char *str) {
- }
 };
 
 #ifndef CACHECORE_CPP

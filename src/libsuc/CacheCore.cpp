@@ -37,6 +37,7 @@ Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
 #define k_RANDOM     "RANDOM"
 #define k_LRU        "LRU"
+#define k_SRRIP      "SRRIP"
 
 //
 // Class CacheGeneric, the combinational logic of Cache
@@ -187,7 +188,7 @@ CacheGeneric<State, Addr_t, Energy> *CacheGeneric<State, Addr_t, Energy>::create
      SescConf->isPower2(section, size) && 
      SescConf->isPower2(section, bsize) &&
      SescConf->isPower2(section, assoc) &&
-     SescConf->isInList(section, repl, k_RANDOM, k_LRU)) {
+     SescConf->isInList(section, repl, k_RANDOM, k_LRU, k_SRRIP)) {
 
     cache = create(s, a, b, u, pStr, sk);
   } else {
@@ -230,6 +231,11 @@ CacheAssoc<State, Addr_t, Energy>::CacheAssoc(int32_t size, int32_t assoc, int32
     policy = RANDOM;
   else if (strcasecmp(pStr, k_LRU)    == 0) 
     policy = LRU;
+  else if (strcasecmp(pStr, k_SRRIP) == 0)
+  {
+    policy = SRRIP;
+    MSG("CacheAssoc constructor: Using SRRIP cache policy!");
+  }
   else {
     MSG("Invalid cache policy [%s]",pStr);
     exit(0);
@@ -266,6 +272,7 @@ typename CacheAssoc<State, Addr_t, Energy>::Line *CacheAssoc<State, Addr_t, Ener
 #if !defined(SESC_SMP) && !defined(SESC_CRIT)
     I((*theSet)->isValid());  
 #endif
+    onLineHit(*theSet);
     return *theSet;
   }
 
@@ -285,7 +292,10 @@ typename CacheAssoc<State, Addr_t, Energy>::Line *CacheAssoc<State, Addr_t, Ener
   }
 
   if (lineHit == 0)
+  {
+    onLineMiss(theSet, setEnd);
     return 0;
+  }
 
   I((*lineHit)->isValid());
 
@@ -302,6 +312,7 @@ typename CacheAssoc<State, Addr_t, Energy>::Line *CacheAssoc<State, Addr_t, Ener
     *theSet = tmp;
   }
 
+  onLineHit(tmp);
   return tmp;
 }
 
@@ -315,6 +326,7 @@ typename CacheAssoc<State, Addr_t, Energy>::Line
   // Check most typical case
   if ((*theSet)->getTag() == tag) {
     GI(tag,(*theSet)->isValid());
+    onLineHit(*theSet);
     return *theSet;
   }
 
@@ -344,7 +356,10 @@ typename CacheAssoc<State, Addr_t, Energy>::Line
   GI(lineFree, !(*lineFree)->isValid() || !(*lineFree)->isLocked());
 
   if (lineHit)
+  {
+    onLineHit(*lineHit);
     return *lineHit;
+  }
   
   I(lineHit==0);
 
@@ -356,16 +371,24 @@ typename CacheAssoc<State, Addr_t, Energy>::Line
     if (policy == RANDOM) {
       lineFree = &theSet[irand];
       irand = (irand + 1) & maskAssoc;
-    }else{
-      I(policy == LRU);
-      // Get the oldest line possible
-      lineFree = setEnd-1;
+    }
+    else if (policy == SRRIP) {
+        lineFree = onLineMiss(theSet, setEnd);
+    }
+    else{
+        I(policy == LRU);
+        // Get the oldest line possible
+        lineFree = setEnd-1;
     }
   }else if(ignoreLocked) {
     if (policy == RANDOM && (*lineFree)->isValid()) {
       lineFree = &theSet[irand];
       irand = (irand + 1) & maskAssoc;
-    }else{
+    }
+    else if (policy == SRRIP) {
+        lineFree = onLineMiss(theSet, setEnd);
+    }
+    else{
       //      I(policy == LRU);
       // Do nothing. lineFree is the oldest
     }
@@ -375,7 +398,10 @@ typename CacheAssoc<State, Addr_t, Energy>::Line
   GI(!ignoreLocked, !(*lineFree)->isValid() || !(*lineFree)->isLocked());
 
   if (lineFree == theSet)
+  {
+    onLineHit(*lineFree);
     return *lineFree; // Hit in the first possition
+  }
 
   // No matter what is the policy, move lineHit to the *theSet. This
   // increases locality
@@ -390,6 +416,7 @@ typename CacheAssoc<State, Addr_t, Energy>::Line
     *theSet = tmp;
   }
 
+  onLineHit(tmp);
   return tmp;
 }
 

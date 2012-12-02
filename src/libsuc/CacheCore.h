@@ -44,8 +44,8 @@ public:
 
     rrpv_t getRrpv() const { return mRrpv; }
         
-    void promoteRrpv() { mRrpv = (mRrpv < maxRrpvValue) ? mRrpv + 1 : mRrpv; }
-    void demoteRrpv() { mRrpv = (mRrpv > 0) ? mRrpv - 1 : mRrpv; }
+    void demoteRrpv() { mRrpv = (mRrpv < maxRrpvValue) ? mRrpv + 1 : mRrpv; }
+    void promoteRrpv() { mRrpv = (mRrpv > 0) ? mRrpv - 1 : mRrpv; }
     
     void minimizeRrpv() { mRrpv = 0; }
     void maximizeRrpv() { mRrpv = maxRrpvValue; }
